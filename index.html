@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Failover — Load Balancer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #111118;
+    --surface2: #18181f;
+    --border: #2a2a35;
+    --text: #e8e8f0;
+    --muted: #6b6b80;
+    --primary: #00e5a0;
+    --primary-dim: rgba(0,229,160,0.12);
+    --warn: #f5c542;
+    --warn-dim: rgba(245,197,66,0.12);
+    --danger: #ff4d6d;
+    --danger-dim: rgba(255,77,109,0.1);
+    --api1: #4d9fff;
+    --api2: #f5c542;
+    --mono: 'Space Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    grid-template-rows: 56px 1fr;
+  }
+
+  /* ── TOPBAR ── */
+  header {
+    grid-column: 1 / -1;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+  }
+  .logo {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--primary);
+    letter-spacing: 0.05em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .logo-dot {
+    width: 8px; height: 8px;
+    background: var(--primary);
+    border-radius: 50%;
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.8); }
+  }
+  .header-status {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .status-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    transition: all 0.3s;
+  }
+  .status-pill.active {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: var(--primary-dim);
+  }
+  .status-pill.fallback {
+    border-color: var(--warn);
+    color: var(--warn);
+    background: var(--warn-dim);
+  }
+  .status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  /* ── LEFT PANEL ── */
+  aside {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    overflow-y: auto;
+  }
+
+  .panel-title {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    text-transform: uppercase;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section { display: flex; flex-direction: column; gap: 10px; }
+
+  label {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: var(--mono);
+    letter-spacing: 0.04em;
+  }
+
+  input[type="text"], input[type="password"], input[type="number"] {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11px;
+    width: 100%;
+    transition: border-color 0.2s;
+    outline: none;
+  }
+  input:focus { border-color: var(--primary); }
+  input::placeholder { color: var(--muted); opacity: 0.6; }
+
+  /* Traffic bar */
+  .traffic-wrap {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+  }
+  .traffic-label {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .traffic-label span:last-child { color: var(--text); }
+  .traffic-bar-bg {
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .traffic-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: var(--primary);
+    transition: width 0.4s ease, background 0.4s;
+    width: 0%;
+  }
+  .traffic-bar-fill.warn { background: var(--warn); }
+
+  /* Threshold slider */
+  .slider-wrap { display: flex; flex-direction: column; gap: 6px; }
+  .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  input[type="range"] {
+    flex: 1;
+    appearance: none;
+    -webkit-appearance: none;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--primary);
+    cursor: pointer;
+    transition: transform 0.15s;
+  }
+  input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
+  .slider-val {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--primary);
+    width: 24px;
+    text-align: right;
+  }
+
+  /* API key indicators */
+  .api-keys-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .api-key-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    transition: border-color 0.3s, background 0.3s;
+  }
+  .api-key-card.routing {
+    border-color: var(--primary);
+    background: var(--primary-dim);
+  }
+  .api-key-card.routing.warn { border-color: var(--warn); background: var(--warn-dim); }
+  .api-key-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+  }
+  .api-key-status {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text);
+  }
+  .api-key-card.routing .api-key-status { color: var(--primary); }
+  .api-key-card.routing.warn .api-key-status { color: var(--warn); }
+
+  /* Ghost users */
+  .ghost-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .ghost-row input { flex: 1; }
+  .btn-sm {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-family: var(--mono);
+    font-size: 11px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s;
+  }
+  .btn-sm:hover { border-color: var(--primary); color: var(--primary); }
+
+  /* Request log */
+  .log-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  .log-entry {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    background: var(--surface2);
+    border-radius: 5px;
+    font-family: var(--mono);
+    font-size: 10px;
+    border-left: 2px solid var(--api1);
+    animation: fadeIn 0.2s ease;
+  }
+  .log-entry.fb { border-left-color: var(--api2); }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+  .log-api {
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: rgba(77,159,255,0.15);
+    color: var(--api1);
+    font-size: 9px;
+  }
+  .log-entry.fb .log-api {
+    background: rgba(245,197,66,0.15);
+    color: var(--api2);
+  }
+  .log-time { color: var(--muted); flex-shrink: 0; }
+  .log-msg { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+
+  /* ── MAIN CHAT ── */
+  main {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* High-demand banner */
+  .banner {
+    background: var(--warn-dim);
+    border-bottom: 1px solid rgba(245,197,66,0.3);
+    padding: 10px 24px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--warn);
+    font-family: var(--mono);
+    animation: slideDown 0.3s ease;
+    display: none;
+  }
+  .banner.visible { display: flex; }
+  @keyframes slideDown { from { transform: translateY(-100%); opacity: 0; } to { transform: none; opacity: 1; } }
+  .banner-icon { font-size: 16px; }
+
+  /* Messages */
+  .messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .msg {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-width: 680px;
+    animation: msgIn 0.25s ease;
+  }
+  @keyframes msgIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .msg.user { align-self: flex-end; align-items: flex-end; }
+  .msg.assistant { align-self: flex-start; }
+
+  .msg-bubble {
+    padding: 12px 16px;
+    border-radius: 12px;
+    font-size: 14px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+  }
+  .msg.user .msg-bubble {
+    background: var(--primary-dim);
+    border: 1px solid rgba(0,229,160,0.25);
+    color: var(--text);
+    border-radius: 12px 12px 2px 12px;
+  }
+  .msg.assistant .msg-bubble {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 2px 12px 12px 12px;
+  }
+  .msg-meta {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .meta-tag {
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 9px;
+  }
+  .meta-tag.api1 { background: rgba(77,159,255,0.15); color: var(--api1); }
+  .meta-tag.api2 { background: rgba(245,197,66,0.15); color: var(--api2); }
+  .meta-tag.fallback { background: var(--warn-dim); color: var(--warn); }
+
+  /* Typing indicator */
+  .typing {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 14px 16px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 2px 12px 12px 12px;
+    width: fit-content;
+  }
+  .typing span {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--muted);
+    animation: bounce 1.2s ease-in-out infinite;
+  }
+  .typing span:nth-child(2) { animation-delay: 0.2s; }
+  .typing span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes bounce { 0%,60%,100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }
+
+  /* Input bar */
+  .input-bar {
+    padding: 16px 24px 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+    background: var(--surface);
+  }
+  .input-wrap {
+    flex: 1;
+    position: relative;
+  }
+  textarea {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+    resize: none;
+    outline: none;
+    min-height: 48px;
+    max-height: 140px;
+    transition: border-color 0.2s;
+    overflow-y: hidden;
+  }
+  textarea:focus { border-color: var(--primary); }
+  textarea::placeholder { color: var(--muted); }
+
+  .btn-send {
+    background: var(--primary);
+    color: var(--bg);
+    border: none;
+    border-radius: 10px;
+    width: 48px; height: 48px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    flex-shrink: 0;
+    font-size: 18px;
+  }
+  .btn-send:hover { transform: scale(1.05); background: #00ffc0; }
+  .btn-send:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* Empty state */
+  .empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 12px;
+    text-align: center;
+  }
+  .empty-icon { font-size: 36px; opacity: 0.3; }
+  .empty-state p { max-width: 280px; line-height: 1.7; opacity: 0.7; }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="logo">
+    <div class="logo-dot"></div>
+    AI_FAILOVER // LOAD BALANCER
+  </div>
+  <div class="header-status">
+    <div class="status-pill" id="headerPill">
+      <div class="status-dot"></div>
+      <span id="headerPillText">IDLE</span>
+    </div>
+    <span id="headerUsers">0 active sessions</span>
+  </div>
+</header>
+
+<!-- LEFT PANEL -->
+<aside>
+  <div class="section">
+    <div class="panel-title">Configuration</div>
+    <label>Primary API Key</label>
+    <input type="password" id="key1" placeholder="gsk_..." autocomplete="off" />
+    <label>Fallback API Key</label>
+    <input type="password" id="key2" placeholder="gsk_..." autocomplete="off" />
+  </div>
+
+  <div class="section">
+    <div class="panel-title">Traffic</div>
+    <div class="traffic-wrap">
+      <div class="traffic-label">
+        <span>Active Sessions</span>
+        <span id="trafficCount">0 / <span id="trafficThreshold">10</span></span>
+      </div>
+      <div class="traffic-bar-bg">
+        <div class="traffic-bar-fill" id="trafficFill"></div>
+      </div>
+    </div>
+    <div class="slider-wrap">
+      <label>Threshold</label>
+      <div class="slider-row">
+        <input type="range" id="thresholdSlider" min="1" max="20" value="10" />
+        <div class="slider-val" id="sliderVal">10</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="panel-title">Routing</div>
+    <div class="api-keys-grid">
+      <div class="api-key-card routing" id="card1">
+        <div class="api-key-label">API KEY 1</div>
+        <div class="api-key-status">● PRIMARY</div>
+      </div>
+      <div class="api-key-card" id="card2">
+        <div class="api-key-label">API KEY 2</div>
+        <div class="api-key-status">○ STANDBY</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="panel-title">Simulate Ghost Users</div>
+    <div class="ghost-row">
+      <input type="number" id="ghostInput" min="0" max="50" value="0" placeholder="0" />
+      <button class="btn-sm" onclick="applyGhosts()">Apply</button>
+    </div>
+    <button class="btn-sm" onclick="clearGhosts()" style="width:100%">Clear Ghost Users</button>
+  </div>
+
+  <div class="section">
+    <div class="panel-title">Request Log</div>
+    <div class="log-list" id="logList">
+      <div style="font-family: var(--mono); font-size: 10px; color: var(--muted); padding: 4px 8px;">No requests yet.</div>
+    </div>
+  </div>
+</aside>
+
+<!-- MAIN CHAT -->
+<main>
+  <div class="banner" id="banner">
+    <span class="banner-icon">⚡</span>
+    <span id="bannerText">High demand — answered by secondary model. No extra charge.</span>
+  </div>
+
+  <div class="messages" id="messages">
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon">⟳</div>
+      <p>Enter your Groq API keys on the left and start chatting. Adjust the threshold and simulate ghost users to test the failover.</p>
+    </div>
+  </div>
+
+  <div class="input-bar">
+    <div class="input-wrap">
+      <textarea id="chatInput" placeholder="Send a message…" rows="1"></textarea>
+    </div>
+    <button class="btn-send" id="sendBtn" onclick="sendMessage()">↑</button>
+  </div>
+</main>
+
+<script>
+  // State
+  let ghostUsers = 0;
+  let threshold = 10;
+  let sessionId = 'session-' + Math.random().toString(36).slice(2, 10);
+  let activeUsers = 0;
+  let isLoading = false;
+
+  // Derive backend URL from current page location
+  const BACKEND = window.location.origin;
+
+  // ── Threshold slider ──
+  const slider = document.getElementById('thresholdSlider');
+  const sliderVal = document.getElementById('sliderVal');
+  slider.addEventListener('input', () => {
+    threshold = parseInt(slider.value);
+    sliderVal.textContent = threshold;
+    document.getElementById('trafficThreshold').textContent = threshold;
+    updateTrafficUI(activeUsers);
+  });
+
+  // ── Ghost users ──
+  function applyGhosts() {
+    const val = parseInt(document.getElementById('ghostInput').value) || 0;
+    ghostUsers = Math.max(0, val);
+    activeUsers = ghostUsers;
+    updateTrafficUI(activeUsers);
+    addLog('system', `Ghost users set to ${ghostUsers}`);
+  }
+
+  function clearGhosts() {
+    ghostUsers = 0;
+    document.getElementById('ghostInput').value = 0;
+    activeUsers = 0;
+    updateTrafficUI(0);
+    addLog('system', 'Ghost users cleared');
+  }
+
+  // ── Traffic UI ──
+  function updateTrafficUI(count) {
+    const pct = Math.min(100, (count / threshold) * 100);
+    const fill = document.getElementById('trafficFill');
+    fill.style.width = pct + '%';
+    fill.className = 'traffic-bar-fill' + (count >= threshold ? ' warn' : '');
+    document.getElementById('trafficCount').innerHTML = `${count} / <span id="trafficThreshold">${threshold}</span>`;
+    document.getElementById('headerUsers').textContent = `${count} active session${count !== 1 ? 's' : ''}`;
+
+    const isFallback = count >= threshold;
+    const pill = document.getElementById('headerPill');
+    const pillText = document.getElementById('headerPillText');
+    pill.className = 'status-pill' + (isFallback ? ' fallback' : (count > 0 ? ' active' : ''));
+    pillText.textContent = isFallback ? 'FALLBACK MODE' : (count > 0 ? 'PRIMARY' : 'IDLE');
+
+    const c1 = document.getElementById('card1');
+    const c2 = document.getElementById('card2');
+    if (isFallback) {
+      c1.className = 'api-key-card';
+      c1.querySelector('.api-key-status').textContent = '○ INACTIVE';
+      c2.className = 'api-key-card routing warn';
+      c2.querySelector('.api-key-status').textContent = '● FALLBACK';
+    } else {
+      c1.className = 'api-key-card routing';
+      c1.querySelector('.api-key-status').textContent = '● PRIMARY';
+      c2.className = 'api-key-card';
+      c2.querySelector('.api-key-status').textContent = '○ STANDBY';
+    }
+  }
+
+  // ── Log ──
+  function addLog(type, text, isFallback = false) {
+    const list = document.getElementById('logList');
+    const existing = list.querySelector('.no-logs');
+    if (existing) existing.remove();
+    const first = list.querySelector('.log-entry, div');
+    // Keep only last 12
+    const entries = list.querySelectorAll('.log-entry');
+    if (entries.length >= 12) entries[entries.length - 1].remove();
+
+    const now = new Date();
+    const time = now.toTimeString().slice(0,8);
+    const div = document.createElement('div');
+    div.className = 'log-entry' + (isFallback ? ' fb' : '');
+    div.innerHTML = `
+      <span class="log-time">${time}</span>
+      <span class="log-api">${isFallback ? 'API 2' : (type === 'system' ? 'SYS' : 'API 1')}</span>
+      <span class="log-msg">${text}</span>
+    `;
+    list.insertBefore(div, list.firstChild);
+  }
+
+  // ── Chat ──
+  const textarea = document.getElementById('chatInput');
+  textarea.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+  textarea.addEventListener('input', () => {
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.min(textarea.scrollHeight, 140) + 'px';
+  });
+
+  function addMessage(role, content, meta = null) {
+    const empty = document.getElementById('emptyState');
+    if (empty) empty.remove();
+
+    const messages = document.getElementById('messages');
+    const div = document.createElement('div');
+    div.className = 'msg ' + role;
+    let metaHtml = '';
+    if (meta) {
+      const tag = meta.isFallback
+        ? `<span class="meta-tag api2">API 2</span><span class="meta-tag fallback">FALLBACK</span>`
+        : `<span class="meta-tag api1">API 1</span>`;
+      metaHtml = `<div class="msg-meta">${tag} <span>${meta.activeUsers} active · threshold ${meta.threshold}</span></div>`;
+    }
+    div.innerHTML = `<div class="msg-bubble">${content}</div>${metaHtml}`;
+    messages.appendChild(div);
+    messages.scrollTop = messages.scrollHeight;
+    return div;
+  }
+
+  function showTyping() {
+    const messages = document.getElementById('messages');
+    const div = document.createElement('div');
+    div.className = 'msg assistant';
+    div.id = 'typing-indicator';
+    div.innerHTML = `<div class="typing"><span></span><span></span><span></span></div>`;
+    messages.appendChild(div);
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  function removeTyping() {
+    const t = document.getElementById('typing-indicator');
+    if (t) t.remove();
+  }
+
+  async function sendMessage() {
+    if (isLoading) return;
+    const input = document.getElementById('chatInput');
+    const message = input.value.trim();
+    if (!message) return;
+
+    const key1 = document.getElementById('key1').value.trim();
+    const key2 = document.getElementById('key2').value.trim();
+
+    if (!key1 || !key2) {
+      alert('Please enter both API keys in the left panel.');
+      return;
+    }
+
+    isLoading = true;
+    document.getElementById('sendBtn').disabled = true;
+    input.value = '';
+    input.style.height = 'auto';
+
+    addMessage('user', message);
+    showTyping();
+
+    // Inject ghost users into session tracking by using ghost session headers
+    const headers = {
+      'Content-Type': 'application/json',
+      'x-session-id': sessionId,
+      'x-ghost-users': ghostUsers.toString(),
+    };
+
+    try {
+      const res = await fetch(`${BACKEND}/api/chat`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ message })
+      });
+      const data = await res.json();
+      removeTyping();
+
+      if (!res.ok) {
+        addMessage('assistant', `⚠ Error: ${data.error}`);
+        return;
+      }
+
+      // Update UI state from response
+      activeUsers = data.activeUsers || activeUsers;
+      updateTrafficUI(activeUsers);
+      addMessage('assistant', data.reply, {
+        isFallback: data.usedFallback,
+        activeUsers: data.activeUsers,
+        threshold: data.threshold
+      });
+
+      // Banner
+      const banner = document.getElementById('banner');
+      if (data.usedFallback) {
+        document.getElementById('bannerText').textContent = data.notice || 'High demand — answered by secondary model.';
+        banner.classList.add('visible');
+        setTimeout(() => banner.classList.remove('visible'), 6000);
+      }
+
+      addLog('chat', message.slice(0, 40), data.usedFallback);
+    } catch (err) {
+      removeTyping();
+      addMessage('assistant', `⚠ Network error: ${err.message}\n\nMake sure the backend server is running on port 3000.`);
+    } finally {
+      isLoading = false;
+      document.getElementById('sendBtn').disabled = false;
+    }
+  }
+
+  // ── Poll status every 5s ──
+  async function pollStatus() {
+    try {
+      const res = await fetch(`${BACKEND}/api/status`);
+      if (res.ok) {
+        const data = await res.json();
+        // Combine real sessions + ghost users
+        activeUsers = (data.activeUsers || 0) + ghostUsers;
+        updateTrafficUI(activeUsers);
+      }
+    } catch {}
+  }
+  setInterval(pollStatus, 5000);
+
+  // Init
+  updateTrafficUI(0);
+</script>
+</body>
+</html>
