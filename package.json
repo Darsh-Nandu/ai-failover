@@ -1,0 +1,29 @@
+{
+  "name": "ai-failover",
+  "version": "1.0.0",
+  "description": "Demand-aware AI API router that automatically fails over to a backup provider when traffic exceeds a threshold",
+  "main": "node-backend.js",
+  "type": "module",
+  "scripts": {
+    "start": "node node-backend.js",
+    "dev": "node --watch node-backend.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "ai",
+    "api",
+    "failover",
+    "load-balancer",
+    "llm"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "directories": {
+    "doc": "docs"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "node-fetch": "^3.3.2"
+  }
+}
