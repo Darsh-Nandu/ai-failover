@@ -750,7 +750,7 @@
       const res = await fetch(`${BACKEND}/api/chat`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ message })
+        body: JSON.stringify({ message, key1, key2, threshold })
       });
       const data = await res.json();
       removeTyping();

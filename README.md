@@ -1,6 +1,8 @@
-# Groq API Fallback Load Balancer
+# Groq API Failover Load Balancer
 
-A demand-aware API router that automatically switches between two Groq API keys when traffic exceeds a threshold — inspired by how Google Gemini handles high-demand periods. When too many users are hitting the primary API, new requests silently fall back to a secondary API key, and users see a friendly "high demand" notice.
+A demand-aware API router that automatically switches between two Groq API keys when concurrent traffic exceeds a configurable threshold — inspired by how Google Gemini handles high-demand periods.
+
+When the active session count crosses the threshold, new requests silently route to the secondary key. Users see a friendly "high demand" notice. No request is dropped.
 
 ---
 
@@ -10,99 +12,195 @@ A demand-aware API router that automatically switches between two Groq API keys 
 User Request
      │
      ▼
-┌─────────────────────────────┐
-│   Load Balancer             │
-│   Active users >= threshold?│
-└──────┬──────────────────────┘
+┌─────────────────────────────────┐
+│   Express Load Balancer         │
+│   active sessions >= threshold? │
+└──────┬──────────────────────────┘
        │
-   ┌───┴───┐
-  No      Yes
-   │        │
-   ▼        ▼
+   ┌───┴────┐
+  No       Yes
+   │         │
+   ▼         ▼
 API Key 1  API Key 2
 (primary)  (fallback)
-   │        │
-   └───┬────┘
-       ▼
-  Response + banner
-  (if fallback was used)
+   │         │
+   └────┬────┘
+        ▼
+  Response + optional
+  "high demand" banner
 ```
 
-The threshold (default: 10 active users) is fully configurable. When demand is high:
-- The request goes to API Key 2 automatically
-- A yellow "high demand" banner appears in the UI
-- The user is informed they won't be charged extra
-- No request is dropped or delayed
+If the primary key also throws a `429` or `5xx`, the router **emergency-falls back** to Key 2 regardless of load — combining proactive and reactive failover.
 
 ---
 
 ## Features
 
 - **Zero dropped requests** — always routes to one of two keys
-- **Visual feedback** — Gemini-style "high demand" banner when falling back
-- **Fake traffic simulator** — simulate ghost users to test fallback without real load
-- **Adjustable threshold** — slider from 1–20 active users
-- **Live traffic bar** — visual indicator of current API load
-- **Per-request routing log** — every request shows which API handled it
+- **Emergency fallback** — switches on `429`/`5xx` even below threshold
+- **Interactive frontend** — built-in chat UI to test the system live
+- **Gemini-style demand banner** — yellow notice when fallback is active
+- **Ghost user simulator** — fake concurrent traffic without real load
+- **Live traffic bar + routing log** — see exactly which API handled each request
+- **Adjustable threshold** — slider from 1–20, applied per-request in real time
+- **Session TTL tracking** — expired sessions auto-evict after 30 seconds
+
+---
+
+## Frontend
+
+The project ships with a full chat UI built using vanilla HTML/CSS/JS — **designed with AI assistance**.
+
+![UI preview: dark terminal-aesthetic interface with left config panel and right chat area](docs/ui-preview.png)
+
+Key UI panels:
+- **Configuration** — paste your two Groq API keys directly in the browser (never stored)
+- **Traffic** — live progress bar showing active sessions vs threshold
+- **Routing** — shows which API key is currently active (PRIMARY / FALLBACK)
+- **Simulate Ghost Users** — inject fake concurrent users to trigger failover on demand
+- **Request Log** — per-message log showing which API handled each request
 
 ---
 
 ## Getting started
 
-### 1. Get your Groq API keys
+### Prerequisites
 
-1. Go to [console.groq.com](https://console.groq.com)
-2. Sign in or create an account (free)
-3. Navigate to **API Keys** in the sidebar
-4. Create two keys — name them `primary` and `fallback`
+- [Node.js](https://nodejs.org) v18 or later
+- Two [Groq API keys](https://console.groq.com) (free account, create two separate keys)
 
-### 2. Run the app
-
-The app is a single HTML file with no build step required.
+### 1. Clone and install
 
 ```bash
-git clone https://github.com/your-username/groq-fallback-lb
-cd groq-fallback-lb
-open index.html   # macOS
-# or just double-click index.html in your file explorer
+git clone https://github.com/Darsh-Nandu/ai-failover.git
+cd ai-failover
+npm install
 ```
 
-### 3. Enter your keys
+### 2. Configure your keys
 
-Paste Key 1 into the "Primary" field and Key 2 into the "Fallback" field in the UI.
+**Option A — `.env` file (recommended for local dev)**
+
+```bash
+cp .env.example .env   # or create .env manually
+```
+
+```env
+GROQ_KEY_1=gsk_your_primary_key_here
+GROQ_KEY_2=gsk_your_fallback_key_here
+THRESHOLD=10
+PORT=3000
+```
+
+**Option B — Enter keys in the UI**
+
+Leave `.env` empty and paste your keys directly into the Configuration panel in the browser. They're sent per-request and never stored anywhere.
+
+### 3. Start the server
+
+```bash
+node node-backend.js
+```
+
+```
+Load balancer running on http://localhost:3000
+Threshold: 10 active users
+Keys loaded: Key1=true, Key2=true
+Frontend: http://localhost:3000/index.html
+```
+
+### 4. Open the UI
+
+Visit **[http://localhost:3000](http://localhost:3000)** in your browser.
 
 ---
 
-## Simulating fake traffic (for testing)
+## Testing the failover
 
-You don't need 10 real users to test the fallback. Use the built-in simulator:
+You don't need 10 real users to trigger the fallback. Use the built-in ghost user simulator:
 
-1. Set the **threshold** slider (e.g. 5)
-2. Enter a number in the **"Simulate ghost users"** field (e.g. 6)
-3. Click **Apply**
-4. Send a message — it will route to API 2 and show the fallback banner
+1. Open the app and enter your API keys
+2. Set the **Threshold** slider to something low, like `3`
+3. Set **Ghost Users** to `4` and click **Apply**
+4. Send any message — it will route to API 2 and show the yellow fallback banner
+5. The request log on the left will confirm which API handled it
 
-This is how you'd demo the system without any real traffic.
+### Running the unit tests
 
-### Programmatic simulation
+```bash
+node test.js
+```
 
-If you're integrating this into a backend, you can fake traffic by maintaining a counter:
+The test suite covers routing logic, session tracking (including TTL expiry), ghost user simulation, edge cases, and response shape validation — no API keys or running server needed.
 
-```javascript
-// Simulate N concurrent users
-let activeUsers = 0;
+```
+=== Routing Logic ===
+  ✓  below threshold → uses primary key
+  ✓  at threshold → uses fallback key
+  ✓  above threshold → uses fallback key
+  ...
 
-function simulateTraffic(n) {
-  activeUsers = n;
+=== Session Tracking ===
+  ✓  expired sessions are evicted
+  ✓  re-registering a session resets its TTL
+  ...
+
+──────────────────────────────────────────
+  20 tests: 20 passed, 0 failed
+──────────────────────────────────────────
+```
+
+---
+
+## API reference
+
+### `POST /api/chat`
+
+Send a message through the load balancer.
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `message` | string | ✓ | The user's message |
+| `key1` | string | if no `.env` | Primary Groq API key |
+| `key2` | string | if no `.env` | Fallback Groq API key |
+| `threshold` | number | no | Override the env threshold for this request |
+
+**Request headers**
+
+| Header | Description |
+|---|---|
+| `x-session-id` | Unique session ID for concurrency tracking |
+| `x-ghost-users` | Number of simulated extra users to add to the count |
+
+**Response**
+
+```json
+{
+  "reply": "Hello! How can I help you?",
+  "usedFallback": false,
+  "activeUsers": 4,
+  "threshold": 10,
+  "notice": null
 }
+```
 
-function shouldFallback(threshold = 10) {
-  return activeUsers >= threshold;
+When `usedFallback` is `true`, `notice` contains a user-facing message.
+
+---
+
+### `GET /api/status`
+
+Returns current load balancer state. Useful for monitoring dashboards.
+
+```json
+{
+  "activeUsers": 4,
+  "threshold": 10,
+  "currentApi": 1,
+  "isFallbackMode": false
 }
-
-// Example: simulate 12 users, threshold 10 → routes to API 2
-simulateTraffic(12);
-console.log(shouldFallback()); // true → use API Key 2
 ```
 
 ---
@@ -110,92 +208,67 @@ console.log(shouldFallback()); // true → use API Key 2
 ## File structure
 
 ```
-groq-fallback-lb/
-├── index.html          # The full app (single file)
-├── README.md           # This file
-├── docs/
-│   ├── architecture.md # Deep dive on routing logic
-│   └── simulate.md     # Guide to traffic simulation methods
-└── examples/
-    └── node-backend.js # Node.js backend version with real concurrency tracking
+ai-failover/
+├── index.html          # Frontend chat UI (vanilla HTML/CSS/JS, AI-assisted)
+├── node-backend.js     # Express server — routing, session tracking, Groq calls
+├── test.js             # Unit test suite (no dependencies)
+├── package.json
+├── .env.example        # Environment variable template
+├── README.md
+└── docs/
+    ├── architecture.md # Deep dive on routing logic and design decisions
+    └── simulate.md     # Guide to traffic simulation methods
 ```
 
 ---
 
-## Core routing logic (annotated)
+## Core routing logic
 
 ```javascript
-// The entire fallback decision is one line:
-const isFallback = activeUsers >= threshold;
+// One decision: is load at or above threshold?
+const chosenKey = activeUsers >= threshold ? key2 : key1;
+const isFallback = chosenKey === key2;
 
-// Pick the right key
-const activeKey = isFallback ? key2 : key1;
-
-// Make the API call — nothing else changes
-const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-  method: 'POST',
-  headers: {
-    'Authorization': 'Bearer ' + activeKey,
-    'Content-Type': 'application/json'
-  },
-  body: JSON.stringify({
-    model: 'llama-3.1-8b-instant',
-    messages: [{ role: 'user', content: userMessage }]
-  })
-});
-
-// Tell the user if fallback was used
-if (isFallback) {
-  showBanner('High demand — answered by our secondary model. No extra charge.');
+// Emergency fallback: retry on primary failure regardless of load
+if (!isFallback && (err.status === 429 || err.status >= 500)) {
+  const reply = await callGroq(key2, message); // silently retry
 }
 ```
 
-The beauty of this pattern: the API call itself is identical. Only the key changes.
+The API call itself is identical — only the key changes. That's the whole pattern.
 
 ---
 
-## Extending this project
+## Extending this
 
-### Add a third API key (circuit breaker pattern)
+**Redis-backed counter** — for multi-instance deployments where each Node process has its own in-memory map:
+
+```javascript
+// Replace activeSessions Map with Redis INCR/EXPIRE
+await redis.set(`session:${sessionId}`, 1, 'EX', 30);
+const activeUsers = await redis.keys('session:*').then(k => k.length);
+```
+
+**Third key / circuit breaker:**
 
 ```javascript
 const keys = [key1, key2, key3];
-
-function getKey(activeUsers, threshold) {
-  const tier = Math.floor(activeUsers / threshold);
-  return keys[Math.min(tier, keys.length - 1)];
-}
+const tier = Math.min(Math.floor(activeUsers / threshold), keys.length - 1);
+const chosenKey = keys[tier];
 ```
 
-### Add real concurrency tracking (Node.js backend)
-
-```javascript
-let activeSessions = new Set();
-
-app.post('/chat', async (req, res) => {
-  const sessionId = req.headers['x-session-id'];
-  activeSessions.add(sessionId);
-
-  const key = activeSessions.size >= THRESHOLD ? KEY_2 : KEY_1;
-
-  try {
-    const reply = await callGroq(key, req.body.message);
-    res.json({ reply, usedFallback: key === KEY_2 });
-  } finally {
-    // Remove after response completes
-    setTimeout(() => activeSessions.delete(sessionId), 30_000);
-  }
-});
-```
+**Key health checks** — pre-flight ping before routing to catch invalid/expired keys.
 
 ---
 
 ## Contributing
 
-PRs welcome. Especially interested in:
-- Redis-backed concurrency counter for multi-instance deployments
-- Automatic key health checks (if Key 1 errors, switch regardless of load)
-- Analytics dashboard showing fallback rate over time
+PRs welcome. Most wanted:
+
+- Redis-backed concurrency for multi-process deployments
+- Automatic key health checks
+- Analytics dashboard for fallback rate over time
+- Streaming response support (`text/event-stream`)
 
 ---
 

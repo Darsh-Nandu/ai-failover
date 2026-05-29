@@ -83,12 +83,15 @@ app.post('/api/chat', async (req, res) => {
     return res.status(400).json({ error: 'API keys not configured. Set GROQ_KEY_1 and GROQ_KEY_2 in .env or pass them in the request.' });
   }
 
+  // Allow the UI to override threshold per-request (frontend slider)
+  const effectiveThreshold = req.body.threshold ? parseInt(req.body.threshold, 10) : THRESHOLD;
+
   registerSession(sessionId);
   // Combine real sessions with ghost users for routing decision
   const realUsers = getActiveCount();
   const activeUsers = realUsers + ghostUsers;
 
-  const chosenKey = selectKey(activeUsers);
+  const chosenKey = activeUsers >= effectiveThreshold ? key2 : key1;
   const isFallback = chosenKey === key2;
 
   console.log(`[${new Date().toISOString()}] session=${sessionId} real=${realUsers} ghost=${ghostUsers} total=${activeUsers} api=${isFallback ? 2 : 1}`);
@@ -99,7 +102,7 @@ app.post('/api/chat', async (req, res) => {
       reply,
       usedFallback: isFallback,
       activeUsers,
-      threshold: THRESHOLD,
+      threshold: effectiveThreshold,
       notice: isFallback
         ? 'High demand — answered by our secondary model. No extra charge.'
         : null,
@@ -114,7 +117,7 @@ app.post('/api/chat', async (req, res) => {
           reply,
           usedFallback: true,
           activeUsers,
-          threshold: THRESHOLD,
+          threshold: effectiveThreshold,
           notice: 'Primary API unavailable — answered by fallback. No extra charge.',
         });
       } catch (fallbackErr) {
@@ -130,7 +133,7 @@ app.get('/api/status', (_req, res) => {
   const active = getActiveCount();
   res.json({
     activeUsers: active,
-    threshold: THRESHOLD,
+    threshold: effectiveThreshold,
     currentApi: active >= THRESHOLD ? 2 : 1,
     isFallbackMode: active >= THRESHOLD,
   });
