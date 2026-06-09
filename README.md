@@ -1,89 +1,89 @@
-# Groq API Failover Load Balancer
+<div align="center">
 
-A demand-aware API router that automatically switches between two Groq API keys when concurrent traffic exceeds a configurable threshold — inspired by how Google Gemini handles high-demand periods.
+# ⟳ AI Failover
 
-When the active session count crosses the threshold, new requests silently route to the secondary key. Users see a friendly "high demand" notice. No request is dropped.
+**Demand-aware AI API router with automatic failover**
+
+Inspired by how Google Gemini silently handles high-demand periods - routes to a secondary API key when concurrent traffic crosses a threshold. Zero dropped requests.
+
+<br/>
+
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-darsh--nandu.github.io%2Fai--failover-00e5a0?style=for-the-badge&logo=github)](https://darsh-nandu.github.io/ai-failover/)
+[![CI](https://img.shields.io/github/actions/workflow/status/Darsh-Nandu/ai-failover/ci.yml?style=for-the-badge&label=Tests&logo=github-actions&logoColor=white)](https://github.com/Darsh-Nandu/ai-failover/actions)
+[![Node](https://img.shields.io/badge/Node.js-18+-339933?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org)
+[![License](https://img.shields.io/badge/License-MIT-6b6b80?style=for-the-badge)](LICENSE)
+
+<br/>
+
+<img src="docs/ui-preview.png" alt="AI Failover UI" width="100%" style="border-radius:12px" />
+
+</div>
 
 ---
 
 ## How it works
 
 ```
-User Request
-     │
-     ▼
-┌─────────────────────────────────┐
-│   Express Load Balancer         │
-│   active sessions >= threshold? │
-└──────┬──────────────────────────┘
-       │
-   ┌───┴────┐
-  No       Yes
-   │         │
-   ▼         ▼
-API Key 1  API Key 2
-(primary)  (fallback)
-   │         │
-   └────┬────┘
-        ▼
-  Response + optional
-  "high demand" banner
+         User Request
+               │
+               ▼
+  ┌────────────────────────┐
+  │      Load Balancer     │
+  │  active >= threshold?  │
+  └──────────┬─────────────┘
+             │
+        ┌────┴────┐
+       No        Yes
+        │          │
+        ▼          ▼
+    API Key 1   API Key 2
+    (primary)   (fallback)
+        │          │
+        └────┬─────┘
+             ▼
+    Response + "high demand"
+    banner if fallback used
 ```
 
-If the primary key also throws a `429` or `5xx`, the router **emergency-falls back** to Key 2 regardless of load — combining proactive and reactive failover.
+If the primary key hits a `429` or `5xx`, the router **emergency-falls back** to Key 2 regardless of load level — combining proactive and reactive failover in one system.
 
 ---
 
 ## Features
 
-- **Zero dropped requests** — always routes to one of two keys
-- **Emergency fallback** — switches on `429`/`5xx` even below threshold
-- **Interactive frontend** — built-in chat UI to test the system live
-- **Gemini-style demand banner** — yellow notice when fallback is active
-- **Ghost user simulator** — fake concurrent traffic without real load
-- **Live traffic bar + routing log** — see exactly which API handled each request
-- **Adjustable threshold** — slider from 1–20, applied per-request in real time
-- **Session TTL tracking** — expired sessions auto-evict after 30 seconds
+| | Feature |
+|---|---|
+| 🔁 | **Zero dropped requests** - always routes to one of two keys |
+| ⚡ | **Emergency fallback** - switches on `429`/`5xx` even below threshold |
+| 💬 | **Interactive chat UI** - test the system live in your browser |
+| 👻 | **Ghost user simulator** - inject fake concurrent load without real traffic |
+| 📊 | **Live traffic bar** - see sessions vs threshold in real time |
+| 🔀 | **Routing log** - per-message record of which API handled each request |
+| 🎚️ | **Adjustable threshold** - slider from 1-20, applied per-request |
+| ⏱️ | **Session TTL tracking** - expired sessions auto-evict after 30s |
+| 🌐 | **Static demo** - runs fully in-browser on GitHub Pages, no backend needed |
 
 ---
 
-## Frontend
+## Quick start
 
-The project ships with a full chat UI built using vanilla HTML/CSS/JS — **designed with AI assistance**.
+### Try it instantly
 
-![UI preview: dark terminal-aesthetic interface with left config panel and right chat area](docs/ui-preview.png)
+→ **[darsh-nandu.github.io/ai-failover](https://darsh-nandu.github.io/ai-failover/)** — no install, runs in your browser. Bring two [Groq API keys](https://console.groq.com) (free).
 
-Key UI panels:
-- **Configuration** — paste your two Groq API keys directly in the browser (never stored)
-- **Traffic** — live progress bar showing active sessions vs threshold
-- **Routing** — shows which API key is currently active (PRIMARY / FALLBACK)
-- **Simulate Ghost Users** — inject fake concurrent users to trigger failover on demand
-- **Request Log** — per-message log showing which API handled each request
-
----
-
-## Getting started
-
-### Prerequisites
-
-- [Node.js](https://nodejs.org) v18 or later
-- Two [Groq API keys](https://console.groq.com) (free account, create two separate keys)
-
-### 1. Clone and install
+### Run locally (with Express backend)
 
 ```bash
 git clone https://github.com/Darsh-Nandu/ai-failover.git
 cd ai-failover
 npm install
+cp .env.example .env   # add your Groq keys
+node node-backend.js
 ```
 
-### 2. Configure your keys
+Open **[http://localhost:3000](http://localhost:3000)**.
 
-**Option A — `.env` file (recommended for local dev)**
-
-```bash
-cp .env.example .env   # or create .env manually
-```
+**`.env` options**
 
 ```env
 GROQ_KEY_1=gsk_your_primary_key_here
@@ -92,61 +92,45 @@ THRESHOLD=10
 PORT=3000
 ```
 
-**Option B — Enter keys in the UI**
-
-Leave `.env` empty and paste your keys directly into the Configuration panel in the browser. They're sent per-request and never stored anywhere.
-
-### 3. Start the server
-
-```bash
-node node-backend.js
-```
-
-```
-Load balancer running on http://localhost:3000
-Threshold: 10 active users
-Keys loaded: Key1=true, Key2=true
-Frontend: http://localhost:3000/index.html
-```
-
-### 4. Open the UI
-
-Visit **[http://localhost:3000](http://localhost:3000)** in your browser.
+> **No `.env`?** Just paste your keys directly in the UI. They're sent per-request and never stored.
 
 ---
 
 ## Testing the failover
 
-You don't need 10 real users to trigger the fallback. Use the built-in ghost user simulator:
+You don't need real concurrent users. Use the built-in ghost user simulator:
 
-1. Open the app and enter your API keys
-2. Set the **Threshold** slider to something low, like `3`
-3. Set **Ghost Users** to `4` and click **Apply**
-4. Send any message — it will route to API 2 and show the yellow fallback banner
-5. The request log on the left will confirm which API handled it
+1. Enter your API keys in the left panel
+2. Set **Threshold** to something low - try `3`
+3. Set **Ghost Users** to `4` → click **Apply**
+4. Send any message - routes to API 2, yellow fallback banner appears
+5. Request log confirms which key handled it
 
-### Running the unit tests
+---
+
+## Unit tests
 
 ```bash
-node test.js
+npm test
 ```
 
-The test suite covers routing logic, session tracking (including TTL expiry), ghost user simulation, edge cases, and response shape validation — no API keys or running server needed.
+22 tests covering routing logic, session TTL, ghost user simulation, edge cases, and response shape - no API keys or running server needed.
 
 ```
 === Routing Logic ===
   ✓  below threshold → uses primary key
   ✓  at threshold → uses fallback key
   ✓  above threshold → uses fallback key
-  ...
+  ✓  isFallback flag is set correctly
 
 === Session Tracking ===
+  ✓  new tracker starts at 0
   ✓  expired sessions are evicted
   ✓  re-registering a session resets its TTL
   ...
 
 ──────────────────────────────────────────
-  20 tests: 20 passed, 0 failed
+  22 tests: 22 passed, 0 failed
 ──────────────────────────────────────────
 ```
 
@@ -156,23 +140,19 @@ The test suite covers routing logic, session tracking (including TTL expiry), gh
 
 ### `POST /api/chat`
 
-Send a message through the load balancer.
-
-**Request body**
-
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `message` | string | ✓ | The user's message |
 | `key1` | string | if no `.env` | Primary Groq API key |
 | `key2` | string | if no `.env` | Fallback Groq API key |
-| `threshold` | number | no | Override the env threshold for this request |
+| `threshold` | number | - | Override env threshold for this request |
 
-**Request headers**
+**Headers**
 
 | Header | Description |
 |---|---|
 | `x-session-id` | Unique session ID for concurrency tracking |
-| `x-ghost-users` | Number of simulated extra users to add to the count |
+| `x-ghost-users` | Simulated extra users to add to the count |
 
 **Response**
 
@@ -186,13 +166,7 @@ Send a message through the load balancer.
 }
 ```
 
-When `usedFallback` is `true`, `notice` contains a user-facing message.
-
----
-
 ### `GET /api/status`
-
-Returns current load balancer state. Useful for monitoring dashboards.
 
 ```json
 {
@@ -205,51 +179,53 @@ Returns current load balancer state. Useful for monitoring dashboards.
 
 ---
 
-## File structure
+## Core logic
 
-```
-ai-failover/
-├── index.html          # Frontend chat UI (vanilla HTML/CSS/JS, AI-assisted)
-├── node-backend.js     # Express server — routing, session tracking, Groq calls
-├── test.js             # Unit test suite (no dependencies)
-├── package.json
-├── .env.example        # Environment variable template
-├── README.md
-└── docs/
-    ├── architecture.md # Deep dive on routing logic and design decisions
-    └── simulate.md     # Guide to traffic simulation methods
+```javascript
+// One decision point - only the key changes, not the call
+const chosenKey = activeUsers >= threshold ? key2 : key1;
+const isFallback = chosenKey === key2;
+
+// Emergency fallback: retry on rate-limit or server error
+if (!isFallback && (err.status === 429 || err.status >= 500)) {
+  const reply = await callGroq(key2, message); // silent retry
+}
 ```
 
 ---
 
-## Core routing logic
+## File structure
 
-```javascript
-// One decision: is load at or above threshold?
-const chosenKey = activeUsers >= threshold ? key2 : key1;
-const isFallback = chosenKey === key2;
-
-// Emergency fallback: retry on primary failure regardless of load
-if (!isFallback && (err.status === 429 || err.status >= 500)) {
-  const reply = await callGroq(key2, message); // silently retry
-}
 ```
-
-The API call itself is identical — only the key changes. That's the whole pattern.
+ai-failover/
+├── index.html            # Chat UI - vanilla HTML/CSS/JS
+├── node-backend.js       # Express server - routing, session tracking, Groq calls
+├── static/
+│   └── index.html        # GitHub Pages version - Groq called directly from browser
+├── test.js               # 22-test suite, zero dependencies
+├── package.json
+├── .env.example
+├── .github/
+│   └── workflows/
+│       ├── ci.yml        # Run tests on every push/PR
+│       └── deploy.yml    # Deploy static/ to GitHub Pages on merge to main
+└── docs/
+    ├── architecture.md
+    └── simulate.md
+```
 
 ---
 
 ## Extending this
 
-**Redis-backed counter** — for multi-instance deployments where each Node process has its own in-memory map:
+**Redis-backed session counter** - for multi-instance deployments:
 
 ```javascript
-// Replace activeSessions Map with Redis INCR/EXPIRE
 await redis.set(`session:${sessionId}`, 1, 'EX', 30);
 const activeUsers = await redis.keys('session:*').then(k => k.length);
 ```
 
-**Third key / circuit breaker:**
+**Multi-tier routing with N keys:**
 
 ```javascript
 const keys = [key1, key2, key3];
@@ -257,18 +233,10 @@ const tier = Math.min(Math.floor(activeUsers / threshold), keys.length - 1);
 const chosenKey = keys[tier];
 ```
 
-**Key health checks** — pre-flight ping before routing to catch invalid/expired keys.
-
----
-
-## Contributing
-
-PRs welcome. Most wanted:
-
-- Redis-backed concurrency for multi-process deployments
-- Automatic key health checks
-- Analytics dashboard for fallback rate over time
+**Ideas for contributors:**
 - Streaming response support (`text/event-stream`)
+- Automatic key health checks before routing
+- Analytics dashboard for fallback rate over time
 
 ---
 
