@@ -133,7 +133,7 @@ app.get('/api/status', (_req, res) => {
   const active = getActiveCount();
   res.json({
     activeUsers: active,
-    threshold: effectiveThreshold,
+    threshold: THRESHOLD,
     currentApi: active >= THRESHOLD ? 2 : 1,
     isFallbackMode: active >= THRESHOLD,
   });
